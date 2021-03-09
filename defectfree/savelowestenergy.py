@@ -1,7 +1,7 @@
 from firedrake import *
 from defcon import *
 import defcon.backend as backend
-from oilystreaks import SmecticProblem
+from defectfree import SmecticProblem
 import os
 
 problem = SmecticProblem()
@@ -14,14 +14,14 @@ Z = problem.function_space(mesh)
 
 io.setup(parameters, functionals, Z)
 
-#params = __import__("oilystreaks").params
-params = linspace(1.0, 5.0, 21)
+params = linspace(0, pi/2, 201)[0::10]
+params = list(params[0:17:1]) + list(params[18:20:1])
 
 filename = os.path.join("output/", "lowestenergy", "lowestenergy.pvd")
 pvd = File(filename)
 lowest_energy_branches_stabilities = []
 for param in params:
-    value = (30, 10, param)
+    value = (30, 10, 4.0, param)
     branches = io.known_branches(value)
     print("Known branches at %s: %s" % (value, branches))
 
@@ -39,8 +39,6 @@ for param in params:
     sols = io.fetch_solutions(value, branchid)
     for sol in sols:
         problem.save_pvd(sol, pvd, value)
-
-    #print("Save the lowest energy branch to " + filename)
 
 with open('lowest_energy_branches_stabilities.txt', 'w') as output:
     for row in lowest_energy_branches_stabilities:

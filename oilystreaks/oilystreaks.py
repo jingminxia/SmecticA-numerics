@@ -252,7 +252,19 @@ class SmecticProblem(BifurcationProblem):
             "pc_factor_mat_solver_type": "mumps",
             "mat_mumps_icntl_14": 200,
             "mat_mumps_icntl_24": 1,
-            "mat_mumps_icntl_13": 1
+            "mat_mumps_icntl_13": 1,
+            "tao_type": "bnls",
+            "tao_gmonitor": None,
+            #"tao_monitor": None,
+            #"tao_ls_monitor": None,
+            "tao_bnk_ksp_type": "gmres",
+            "tao_bnk_ksp_converged_reason": None,
+            "tao_bnk_ksp_monitor_true_residual": None,
+            "tao_bnk_pc_type": "lu",
+            "tao_ntr_pc_factor_mat_solver_type": "mumps",
+            #"tao_ntr_pc_type": "lmvm",
+            "tao_ls_type": "armijo",
+            "tao_converged_reason": None,
         }
         return params
 
@@ -269,6 +281,10 @@ class SmecticProblem(BifurcationProblem):
         #visualize the director
         d0 = d[0]
         d1 = d[1]
+        Q11 = Function(FunctionSpace(mesh, "CG", 1)).interpolate(d0)
+        Q12 = Function(FunctionSpace(mesh, "CG", 1)).interpolate(d1)
+        Q11.rename("Q11")
+        Q12.rename("Q12")
         Q = interpolate(as_tensor([[d0, d1], [d1, -d0]]), TensorFunctionSpace(mesh, "CG", 1))
         eigs, eigv = np.linalg.eigh(np.array(Q.vector()))
         s = Function(FunctionSpace(mesh, "CG", 1)).interpolate(2*sqrt(dot(d,d)))
@@ -318,7 +334,7 @@ class SmecticProblem(BifurcationProblem):
         anchoring.interpolate(Constant(assemble(+ W/2 * inner(Q-Q_bottom, Q-Q_bottom) * ds(3)+ W/2 * inner(Q-Q_vertical, Q-Q_vertical) * (ds(1)+ds(2)+ds(4)))))
         anchoring.rename("anchoring_energy")
 
-        pvd.write(uv, n, energy_density, bulksmec, coupled, bulknem, elastic, anchoring, s, s_eig)
+        pvd.write(uv, Q11, Q12, n, energy_density, bulksmec, coupled, bulknem, elastic, anchoring, s, s_eig)
 
     def monitor(self, params, branchid, solution, functionals):
         filename = "output/pvd/ratio-%s/solution-%d.pvd" % (params[2], branchid)
@@ -326,6 +342,41 @@ class SmecticProblem(BifurcationProblem):
         self.save_pvd(solution, pvd, params)
         print("Wrote to %s" % filename)
 
+    def compute_stability(self, params, branchid, z, hint=None):
+        Z = z.function_space()
+        trial = TrialFunction(Z)
+        test  = TestFunction(Z)
+
+        bcs = self.boundary_conditions(Z, params)
+        comm = Z.mesh().mpi_comm()
+
+        F = self.residual(z, [Constant(p) for p in params], test)
+        J = derivative(F, z, trial)
+
+        # Build the LHS matrix
+        A = assemble(J, bcs=bcs, mat_type="aij")
+        A = A.M.handle
+
+        pc = PETSc.PC().create(comm)
+        pc.setOperators(A)
+        pc.setType("cholesky")
+        pc.setFactorSolverType("mumps")
+        pc.setUp()
+
+        F = pc.getFactorMatrix()
+        (neg, zero, pos) = F.getInertia()
+
+        print("Inertia: (-: %s, 0: %s, +: %s)" % (neg, zero, pos))
+        expected_dim = 0
+
+        # Nocedal & Wright, theorem 16.3
+        if neg == expected_dim:
+            is_stable = True
+        else:
+            is_stable = False
+
+        d = {"stable": (neg, zero, pos)}
+        return d
 
     def xxxsolver(self, problem, params, solver_params, prefix="", **kwargs):
         Z = problem.u.function_space()

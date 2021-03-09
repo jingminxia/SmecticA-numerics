@@ -222,7 +222,20 @@ class SmecticProblem(BifurcationProblem):
             "pc_factor_mat_solver_type": "mumps",
             "mat_mumps_icntl_14": 200,
             "mat_mumps_icntl_24": 1,
-            "mat_mumps_icntl_13": 1
+            "mat_mumps_icntl_13": 1,
+            "tao_type": "bnls",
+            "tao_gmonitor": None,
+            "tao_grtol": 1e-10,
+            #"tao_monitor": None,
+            #"tao_ls_monitor": None,
+            "tao_bnk_ksp_type": "gmres",
+            "tao_bnk_ksp_converged_reason": None,
+            "tao_bnk_ksp_monitor_true_residual": None,
+            "tao_bnk_pc_type": "lu",
+            "tao_ntr_pc_factor_mat_solver_type": "mumps",
+            #"tao_ntr_pc_type": "lmvm",
+            "tao_ls_type": "armijo",
+            "tao_converged_reason": None,
         }
         return params
 
@@ -258,54 +271,44 @@ class SmecticProblem(BifurcationProblem):
         self.save_pvd(solution, pvd, params)
         print("Wrote to %s" % filename)
 
-    def xxxsolver(self, problem, params, solver_params, prefix="", **kwargs):
-        Z = problem.u.function_space()
-        Xscat = self.Xscat
-        sign = self.sign
-        scatter = self.scatter
+    def compute_stability(self, params, branchid, z, hint=None):
+        Z = z.function_space()
+        trial = TrialFunction(Z)
+        test  = TestFunction(Z)
 
-        def post_function_callback(X, F):
-            # Basic idea: set residual to be value of slave dof + sign * value of master dof
+        bcs = self.boundary_conditions(Z, params)
+        comm = Z.mesh().mpi_comm()
 
-            self.scatter(X, Xscat, addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
-            with sign.dat.vec_ro as signv:
-                for slave_dof in self.my_slave:
-                    #print(f"{Z.mesh().comm.rank}: setting value of {slave_dof} to be {X.getValue(slave_dof)} + {signv.getValue(slave_dof)} * {Xscat.getValue(slave_dof)} = {X.getValue(slave_dof) + signv.getValue(slave_dof) * Xscat.getValue(slave_dof)}", flush=True)
-                    F.setValue(slave_dof, X.getValue(slave_dof) + signv.getValue(slave_dof) * Xscat.getValue(slave_dof))
+        F = self.residual(z, [Constant(p) for p in params], test)
+        J = derivative(F, z, trial)
 
-            F.assemble()
+        # Build the LHS matrix
+        A = assemble(J, bcs=bcs, mat_type="aij")
+        A = A.M.handle
 
+        pc = PETSc.PC().create(comm)
+        pc.setOperators(A)
+        pc.setType("cholesky")
+        pc.setFactorSolverType("mumps")
+        pc.setUp()
 
-        def post_jacobian_callback(X, J):
-            # Trust me. I know what I'm doing!
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_LOCATION_ERR, False)
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, False)
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_LOCATIONS, True)
-            J.setOption(PETSc.Mat.Option.UNUSED_NONZERO_LOCATION_ERR, False)
+        F = pc.getFactorMatrix()
+        (neg, zero, pos) = F.getInertia()
 
-            # First, zero all rows associated with slave dofs
-            J.zeroRows(self.my_slave, diag=1)
+        print("Inertia: (-: %s, 0: %s, +: %s)" % (neg, zero, pos))
+        expected_dim = 0
 
-            # Now set the off-diagonal entries
-            with sign.dat.vec_ro as signv:
-                for (slave_dof, master_dof) in zip(self.my_slave, self.my_master):
-                    row = slave_dof
-                    col = master_dof
-                    val = signv.getValue(slave_dof)
-                    J.setValues([row], [col], [val])
+        # Nocedal & Wright, theorem 16.3
+        if neg == expected_dim:
+            is_stable = True
+        else:
+            is_stable = False
 
-            J.assemble()
+        d = {"stable": (neg, zero, pos)}
+        return d
 
-        solv = NonlinearVariationalSolver(problem, options_prefix=prefix,
-                solver_parameters=solver_params,
-                post_function_callback=post_function_callback,
-                post_jacobian_callback=post_jacobian_callback,
-                **kwargs)
-        return solv
-
-#    def predict(self, problem, solution, oldparams, newparams, hint):
-#        return secant(problem, solution, oldparams, newparams, hint)
+params = linspace(0,pi/2,201)
 
 if __name__ == "__main__":
-    dc = DeflatedContinuation(problem=SmecticProblem(), teamsize=3, verbose=True, profile=False, clear_output=True, logfiles=True)
-    dc.run(values={"q": 30, "W": 10, "ratio": 4.0, "theta": linspace(0,pi/2,91)}, freeparam="theta")
+    dc = DeflatedContinuation(problem=SmecticProblem(), teamsize=3, verbose=True, profile=False, clear_output=True, logfiles=False)
+    dc.run(values={"q": 30, "W": 10, "ratio": 4.0, "theta": params}, freeparam="theta")
