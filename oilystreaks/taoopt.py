@@ -49,11 +49,18 @@ class TaoOptimisation(object):
         #eps = 0e-10
         #noise = rg.uniform(V, -eps, +eps)
 
-        #z.assign(1.1*self.base + 0.4*perturbations[0]) # used for r=4.6
-        #z.assign(1.001*self.base + 0.1*perturbations[-2]) # used for r=4.4 perturbing branch 9999
-        #z.assign(1.1*self.base + 0.2*perturbations[-1]) # used for r=4.8
-        #z.assign(1.001*self.base + 0.0001*perturbations[-1]) # used for r=1.8 up to 4.2
+        #z.assign(1.1*self.base + 0.4*perturbations[0]) # used for r=4.6, 4.4
+        #z.assign(1.1*self.base + 0.2*perturbations[-1]) # used for r=4.8, 4.2
+        #z.assign(1.001*self.base + 0.0001*perturbations[-1]) # used for r=1.8, 2.6, 3.0, 3.4
+        #z.assign(1.1*self.base + 0.00001*perturbations[0]) # used for r=2.0
+        #z.assign(1.2*self.base + 0.1*perturbations[0]) # used for r=2.2
+        #z.assign(1.2*self.base + 0.1*perturbations[0]) # used for r=2.4
+        #z.assign(1.105*self.base + 0.1*perturbations[-1]) # used for r=2.8
+        #z.assign(1.1*self.base + 0.001*perturbations[1]) # used for r=3.2
+        #z.assign(1.05*self.base + 0.001*perturbations[1]) # used for r=3.6
+        #z.assign(1.005*self.base + 0.0001*perturbations[-1]) # used for r=3.8
         #z.assign(1.05*self.base + 0.2*perturbations[-1]) # used for r=2.88
+        #z.assign(1.1*self.base + 0.2*perturbations[0]) # used for r=5.0
         z.assign(1.1*self.base + 0.4*perturbations[-1]) #used for r=4.0
         # check the energy of the perturbed solution
         print("The energy of the perturbed solution: %s" % (assemble(problem.energy(z, params))/params[2]))
@@ -182,6 +189,7 @@ class TaoOptimisation(object):
 
     def compute_functionals(self, sol, params):
         q = params[0]
+        W = params[1]
         r = params[2]
         B = Constant(1e-5)
         a = Constant(-5*2)
@@ -192,9 +200,14 @@ class TaoOptimisation(object):
         (u, d) = split(sol)
         Q = as_tensor([[d[0], d[1]],
                        [d[1], -d[0]]])
+        Q_vertical = as_tensor([[-1/2, 0], [0, 1/2]])
+        Q_bottom = as_tensor([[1/2, 0], [0, -1/2]])
         I = as_matrix([[1,0],[0,1]])
         mat = grad(grad(u)) + q**2 * (Q+I/2) * u
-        energy = assemble(self.problem.energy(sol, params)) /r
+        computed_energy = self.problem.energy(sol, params)
+        scale_energy = computed_energy - W/2 * inner(Q-Q_vertical, Q-Q_vertical) * (ds(1)+ds(2))
+        side_energy = assemble(W/2 * inner(Q-Q_vertical, Q-Q_vertical) * (ds(1)+ds(2)))
+        energy = assemble(scale_energy)/r + side_energy
         indefEnergy = assemble(
             + a/2 * u**2 * dx
             + b/3 * u**3 * dx
@@ -203,11 +216,11 @@ class TaoOptimisation(object):
         fourthEnergy = assemble(B*inner(mat,mat)*dx)/r
         elasticEnergy = assemble(K/2 * inner(grad(Q), grad(Q)) *dx)/r
         bulkEnergy = assemble(-l * tr(Q*Q) *dx + l * dot(tr(Q*Q), tr(Q*Q))*dx)/r
-        sqL2 = assemble(u*u*dx)
+        anchoringEnergy = assemble(W/2 * inner(Q-Q_bottom, Q-Q_bottom) * ds(3) + W/2 * inner(Q-Q_vertical, Q-Q_vertical) * ds(4)) /r
 
         return [
                 energy, indefEnergy, fourthEnergy,
-                elasticEnergy, bulkEnergy, sqL2
+                elasticEnergy, bulkEnergy, anchoringEnergy
                ]
 
     def solve(self):
@@ -280,7 +293,7 @@ if __name__ == "__main__":
     #ratio parameters shown in video
     ratios = linspace(1.0, 5.0, 21)[15:16:1]
     #branches with lowest energy
-    branches = [140, 256, 959, 463, 898, 1575, 1575, 1072, 1072, 256, 256, 898, 898, 562, 1317, 1317, 268, 9999, 537, 1176, 0][15:16:1]
+    branches = [140, 256, 959, 463, 898, 1575, 1575, 1072, 1072, 256, 256, 898, 898, 562, 1317, 1317, 268, 1176, 537, 1176, 0][15:16:1]
     for (ratio, branchid) in zip(ratios, branches):
         parameters = (30, 10, ratio)
         solver = TaoOptimisation(problem, parameters, branchid)

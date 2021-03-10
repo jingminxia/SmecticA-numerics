@@ -20,6 +20,7 @@ params = list(params[0:17:1]) + list(params[18:20:1])
 filename = os.path.join("output/", "lowestenergy", "lowestenergy.pvd")
 pvd = File(filename)
 lowest_energy_branches_stabilities = []
+diagram_data = []
 for param in params:
     value = (30, 10, 4.0, param)
     branches = io.known_branches(value)
@@ -36,10 +37,15 @@ for param in params:
     print("The lowest energy branch at %s: %s" % (value, branchid))
     stability = io.fetch_stability(value, branchid)
     lowest_energy_branches_stabilities.append((branchid, stability))
+    diagram_data.append((param, energyvalue[0]))
     sols = io.fetch_solutions(value, branchid)
     for sol in sols:
         problem.save_pvd(sol, pvd, value)
 
 with open('lowest_energy_branches_stabilities.txt', 'w') as output:
     for row in lowest_energy_branches_stabilities:
+        output.write(str(row) + '\n')
+
+with open('defectfree_add_data_param_energy.txt', 'w') as output:
+    for row in diagram_data:
         output.write(str(row) + '\n')
