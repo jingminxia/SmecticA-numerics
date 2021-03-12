@@ -22,7 +22,7 @@ pvd = File(filename)
 lowest_energy_branches_stabilities = []
 diagram_data = []
 for param in params:
-    value = (30, 10, 4.0, param)
+    value = (30, 4.0, param)
     branches = io.known_branches(value)
     print("Known branches at %s: %s" % (value, branches))
 

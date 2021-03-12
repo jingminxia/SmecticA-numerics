@@ -26,19 +26,16 @@ class SmecticProblem(BifurcationProblem):
 
     def parameters(self):
         q = Constant(0)
-        W = Constant(0)
         ratio = Constant(0)
         theta = Constant(0)
         return [(q, "q", r"$q$"),
-                (W, "W", "anchorweight"),
                 (ratio, "ratio", "aspect-ratio"),
                 (theta, "theta", r"$\theta$")]
 
     def energy(self, z, params):
         q = params[0]
-        W = params[1] #larger W gives better alignment of the boundary conditions
-        r = params[2]
-        theta = params[3]
+        r = params[1]
+        theta = params[2]
         a = Constant(-5*2)
         b = Constant(0)
         c = Constant(5*2)
@@ -77,7 +74,7 @@ class SmecticProblem(BifurcationProblem):
         return F
 
     def boundary_conditions(self, Z, params):
-        theta = params[3]
+        theta = params[2]
         bc1 = DirichletBC(Z.sub(1), as_vector([cos(theta)**2-1/2, -sin(theta)*cos(theta)]), 1)#bottom
         bc2 = DirichletBC(Z.sub(1), as_vector([cos(theta)**2-1/2, sin(theta)*cos(theta)]), 2)#top
         bcs = [bc1, bc2]
@@ -85,11 +82,11 @@ class SmecticProblem(BifurcationProblem):
 
     def functionals(self):
         def energy(z, params):
-            r = params[2]
+            r = params[1]
             return assemble(self.energy(z, params)) /r
 
         def indefEnergy(z, params):
-            r = params[2]
+            r = params[1]
             a = Constant(-5*2)
             b = Constant(0)
             c = Constant(5*2)
@@ -104,7 +101,7 @@ class SmecticProblem(BifurcationProblem):
         def fourthEnergy(z, params):
             (u, d) = split(z)
             q = params[0]
-            r = params[2]
+            r = params[1]
             B = Constant(1e-5)
             Q = as_tensor([[d[0], d[1]],
                            [d[1], -d[0]]])
@@ -116,7 +113,7 @@ class SmecticProblem(BifurcationProblem):
         def elasticEnergy(z, params):
             (_, d) = split(z)
             K = Constant(0.3)
-            r = params[2]
+            r = params[1]
             Q = as_tensor([[d[0], d[1]],
                            [d[1], -d[0]]])
             j = assemble(K/2 * inner(grad(Q), grad(Q)) *dx)
@@ -124,7 +121,7 @@ class SmecticProblem(BifurcationProblem):
 
         def bulkEnergy(z, params):
             (_, d) = split(z)
-            r = params[2]
+            r = params[1]
             l = Constant(30)
             Q = as_tensor([[d[0], d[1]],
                            [d[1], -d[0]]])
@@ -172,7 +169,7 @@ class SmecticProblem(BifurcationProblem):
         return z
 
     def initial_guess_radial(self, Z, params, n):
-        r = params[2]
+        r = params[1]
         z = Function(Z)
         (x, y) = SpatialCoordinate(Z.mesh())
         r2 = x**2+y**2 + Constant(1e-15)
@@ -189,7 +186,7 @@ class SmecticProblem(BifurcationProblem):
         return z
 
     def transform_guess(self, state, task, io):
-        r = task.newparams[2]
+        r = task.newparams[1]
         print("Setting aspect ratio to r = %s" % r)
         mesh = state.function_space().mesh()
         mesh.coordinates.dat.data[:, 0] = r * self.orig_coordinates.dat.data_ro[:, 0]
@@ -241,7 +238,7 @@ class SmecticProblem(BifurcationProblem):
 
     def save_pvd(self, z, pvd, params):
         mesh = z.function_space().mesh()
-        r = params[2]
+        r = params[1]
         mesh.coordinates.dat.data[:, 0] = r * self.orig_coordinates.dat.data_ro[:, 0]
         mesh.coordinates.dat.data[:, 1] = self.orig_coordinates.dat.data_ro[:, 1]
 
@@ -266,7 +263,7 @@ class SmecticProblem(BifurcationProblem):
         pvd.write(uv, n, s, s_eig)
 
     def monitor(self, params, branchid, solution, functionals):
-        filename = "output/pvd/theta-%s/solution-%d.pvd" % (params[3], branchid)
+        filename = "output/pvd/theta-%s/solution-%d.pvd" % (params[2], branchid)
         pvd = File(filename, comm=solution.function_space().mesh().comm)
         self.save_pvd(solution, pvd, params)
         print("Wrote to %s" % filename)
@@ -310,5 +307,5 @@ class SmecticProblem(BifurcationProblem):
 params = linspace(0,pi/2,201)
 
 if __name__ == "__main__":
-    dc = DeflatedContinuation(problem=SmecticProblem(), teamsize=3, verbose=True, profile=False, clear_output=True, logfiles=False)
-    dc.run(values={"q": 30, "W": 10, "ratio": 4.0, "theta": params}, freeparam="theta")
+    dc = DeflatedContinuation(problem=SmecticProblem(), teamsize=3, verbose=True, profile=False, clear_output=True, logfiles=True)
+    dc.run(values={"q": 30, "ratio": 4.0, "theta": params}, freeparam="theta")

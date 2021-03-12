@@ -43,8 +43,6 @@ class SmecticProblem(BifurcationProblem):
         K = Constant(0.3)
         l = Constant(1)
 
-        s = FacetNormal(z.function_space().mesh())
-
         (u, d) = split(z)
         Q = as_tensor([[d[0], d[1]],
                        [d[1], -d[0]]])
@@ -61,9 +59,7 @@ class SmecticProblem(BifurcationProblem):
             - l * tr(Q*Q) * dx
             + l * dot(tr(Q*Q), tr(Q*Q)) * dx
             + W/2 * inner(Q-Q_bottom, Q-Q_bottom) * ds(3)
-            #+ W/2 * dot(s, (Q+I/2)*s) * ds(3)
             + W/2 * inner(Q-Q_vertical, Q-Q_vertical) * (ds(1)+ds(2)+ds(4))
-            #- W/2 * dot(s, (Q+I/2)*s) * ds(4)
             )
 
         return E
@@ -144,14 +140,12 @@ class SmecticProblem(BifurcationProblem):
             (_, d) = split(z)
             W = params[1]
             r = params[2]
-            s = FacetNormal(z.function_space().mesh())
             I = as_matrix([[1,0],[0,1]])
             Q = as_tensor([[d[0], d[1]],
                            [d[1], -d[0]]])
             Q_bottom = as_tensor([[1/2, 0], [0, -1/2]])
             Q_vertical = as_tensor([[-1/2, 0], [0, 1/2]])
             j = assemble(W/2 * inner(Q-Q_bottom, Q-Q_bottom) * ds(3) + W/2 * inner(Q-Q_vertical, Q-Q_vertical) * ds(4))
-            #j = assemble(W/2 * dot(s, (Q+I/2)*s) * ds(3) - W/2 * inner(s, (Q+I/2)*s) * ds(4))
             return j/r
 
         def normalpenalty(z, params):
@@ -377,51 +371,6 @@ class SmecticProblem(BifurcationProblem):
 
         d = {"stable": (neg, zero, pos)}
         return d
-
-    def xxxsolver(self, problem, params, solver_params, prefix="", **kwargs):
-        Z = problem.u.function_space()
-        Xscat = self.Xscat
-        sign = self.sign
-        scatter = self.scatter
-
-        def post_function_callback(X, F):
-            # Basic idea: set residual to be value of slave dof + sign * value of master dof
-
-            self.scatter(X, Xscat, addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
-            with sign.dat.vec_ro as signv:
-                for slave_dof in self.my_slave:
-                    #print(f"{Z.mesh().comm.rank}: setting value of {slave_dof} to be {X.getValue(slave_dof)} + {signv.getValue(slave_dof)} * {Xscat.getValue(slave_dof)} = {X.getValue(slave_dof) + signv.getValue(slave_dof) * Xscat.getValue(slave_dof)}", flush=True)
-                    F.setValue(slave_dof, X.getValue(slave_dof) + signv.getValue(slave_dof) * Xscat.getValue(slave_dof))
-
-            F.assemble()
-
-
-        def post_jacobian_callback(X, J):
-            # Trust me. I know what I'm doing!
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_LOCATION_ERR, False)
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, False)
-            J.setOption(PETSc.Mat.Option.NEW_NONZERO_LOCATIONS, True)
-            J.setOption(PETSc.Mat.Option.UNUSED_NONZERO_LOCATION_ERR, False)
-
-            # First, zero all rows associated with slave dofs
-            J.zeroRows(self.my_slave, diag=1)
-
-            # Now set the off-diagonal entries
-            with sign.dat.vec_ro as signv:
-                for (slave_dof, master_dof) in zip(self.my_slave, self.my_master):
-                    row = slave_dof
-                    col = master_dof
-                    val = signv.getValue(slave_dof)
-                    J.setValues([row], [col], [val])
-
-            J.assemble()
-
-        solv = NonlinearVariationalSolver(problem, options_prefix=prefix,
-                solver_parameters=solver_params,
-                post_function_callback=post_function_callback,
-                post_jacobian_callback=post_jacobian_callback,
-                **kwargs)
-        return solv
 
     def predict(self, problem, solution, oldparams, newparams, hint):
         return secant(problem, solution, oldparams, newparams, hint)

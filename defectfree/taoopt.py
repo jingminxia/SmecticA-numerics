@@ -44,11 +44,6 @@ class TaoOptimisation(object):
         # check the stability of the solution
         (_, perturbations) = self.compute_stability(self.base, problem)
 
-        #pcg = PCG64(seed=123456789)
-        #rg = RandomGenerator(pcg)
-        #eps = 0e-10
-        #noise = rg.uniform(V, -eps, +eps)
-
         #z.assign(1.0*self.base + 0.08*perturbations[0]) # used for theta=1.201
         #z.assign(1.0*self.base + 0.04*perturbations[0]) #used for theta=1.405; get branch 9999 for theta=1.4137; get branch 10002 for theta=1.4137
         #z.assign(1.0*self.base + 0.004*perturbations[0]) #used for theta=1.4137 to get branch 10001 
@@ -63,7 +58,7 @@ class TaoOptimisation(object):
         z.assign(1.00001*self.base + 0.1*perturbations[0]) #used for theta=1.178
         #z.assign(1.0001*self.base - 0.06*perturbations[0]) #used for theta=1.507; does not work
         # check the energy of the perturbed solution
-        print("The energy of the perturbed solution: %s" % (assemble(problem.energy(z, params))/params[2]))
+        print("The energy of the perturbed solution: %s" % (assemble(problem.energy(z, params))/params[1]))
 
         # Just in case the problem does something
         # important in transform_guess
@@ -91,21 +86,6 @@ class TaoOptimisation(object):
         self.H = allocate_matrix(self.HJ, bcs=self.bcs)
         self._assemble_hessian = create_assembly_callable(self.HJ, tensor=self.H, bcs=self.bcs)
 
-        # Assemble the Riesz map
-#        zero = Function(V)
-#        sqnorm = problem.squared_norm(z, zero, params)
-#        R = derivative(derivative(0.5 * sqnorm, z, v), z, w)
-#        RMat = assemble(R, mat_type="aij").M.handle
-#        riesz_ksp = PETSc.KSP.create(comm)
-#        riesz_ksp.setOperators(Rmat)
-#        riesz_ksp.setType("preonly")
-#        riesz_ksp.pc.setType("cholesky")
-#        riesz_ksp.pc.setFactorSolverType("mumps")
-#        riesz_ksp.setOptionsPrefix("riesz_")
-#        riesz_ksp.setFromOptions()
-#        riesz_ksp.setUp()
-#        self.riesz_ksp = riesz_ksp
-
         # Set up TAO solver
         tao = PETSc.TAO().create(comm)
         tao.setFromOptions()
@@ -117,7 +97,7 @@ class TaoOptimisation(object):
     def compute_stability(self, solution, problem):
         Z = solution.function_space()
         # have to explicitly include BCs here since it depends on params
-        theta = self.params[3]
+        theta = self.params[2]
         bc1 = DirichletBC(Z.sub(1), as_vector([cos(theta)**2-1/2, -sin(theta)*cos(theta)]), 1)#bottom
         bc2 = DirichletBC(Z.sub(1), as_vector([cos(theta)**2-1/2, sin(theta)*cos(theta)]), 2)#top
         bcs = [bc1, bc2]
@@ -182,7 +162,7 @@ class TaoOptimisation(object):
             # save eigenfunctions
             for (eigenvalue, eigenfunction) in zip(eigenvalues, eigenfunctions):
                 print("Got eigenvalue %s" % eigenvalue)
-                filename = "output/eigenfunctions-theta-%s/eigenvalue-%s.pvd" % (self.params[3], eigenvalue)
+                filename = "output/eigenfunctions-theta-%s/eigenvalue-%s.pvd" % (self.params[2], eigenvalue)
                 pvd = File(filename, comm=backend.comm_world)
                 problem.save_pvd(eigenfunction, pvd, self.params)
                 print("Saved eigenfunction to %s." % filename)
@@ -193,7 +173,7 @@ class TaoOptimisation(object):
 
     def compute_functionals(self, sol, params):
         q = params[0]
-        r = params[2]
+        r = params[1]
         B = Constant(1e-5)
         a = Constant(-5*2)
         b = Constant(0)
@@ -236,17 +216,17 @@ class TaoOptimisation(object):
 
         # compare the difference between the original and tao-solved solutions
         difference = Function(self.z.function_space()).assign(self.z - self.base)
-        pvd_diff = File("output/difference-theta-%s/solution.pvd" % self.params[3], comm=MPI.COMM_WORLD)
+        pvd_diff = File("output/difference-theta-%s/solution.pvd" % self.params[2], comm=MPI.COMM_WORLD)
         problem.save_pvd(difference, pvd_diff, self.params)
 
         # save the solution by Tao solver
-        filename = "output/pvd/theta-%s/solution-9999.pvd" % self.params[3]
+        filename = "output/pvd/theta-%s/solution-9999.pvd" % self.params[2]
         pvd = File(filename, comm=MPI.COMM_WORLD)
         problem.save_pvd(self.z, pvd, self.params)
         print("Saved tao solution to %s" % filename)
 
         # compute the energy (excluding the C0 IP penalization term)
-        print("Energy value of the tao-solved solution: %s" % (assemble(problem.energy(self.z, self.params))/self.params[2]))
+        print("Energy value of the tao-solved solution: %s" % (assemble(problem.energy(self.z, self.params))/self.params[1]))
 
     def formObjective(self, tao, x):
         with self.z.dat.vec_wo as x_:
@@ -284,12 +264,12 @@ if __name__ == "__main__":
     # only the last 7 branches are unstable
     branches = [345, 261, 261, 345, 261, 345, 336, 316, 258, 258, 186, 276, 186, 303, 12, 135, 10001, 303, 10002, 9999, 310][15:16:1]
     for (theta, branchid) in zip(thetas[15:16:1], branches):
-        parameters = (30, 10, 4.0, theta)
+        parameters = (30, 4.0, theta)
         solver = TaoOptimisation(problem, parameters, branchid)
         solver.solve()
-    #parameters = (30, 10, 4.0, 1.570796326794897)
+    #parameters = (30, 4.0, 1.570796326794897)
     #branchid = 310
-    #parameters = (30, 10, 4.0, 1.201659189998096)
+    #parameters = (30, 4.0, 1.201659189998096)
     #branchid = 135
-    #parameters = (30, 10, 4.0, 1.4058627124814325)
+    #parameters = (30, 4.0, 1.4058627124814325)
     #branchid = 269

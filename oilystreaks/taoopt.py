@@ -44,11 +44,6 @@ class TaoOptimisation(object):
         # check the stability of the solution
         (_, perturbations) = self.compute_stability(self.base, problem)
 
-        #pcg = PCG64(seed=123456789)
-        #rg = RandomGenerator(pcg)
-        #eps = 0e-10
-        #noise = rg.uniform(V, -eps, +eps)
-
         #z.assign(1.1*self.base + 0.4*perturbations[0]) # used for r=4.6, 4.4
         #z.assign(1.1*self.base + 0.2*perturbations[-1]) # used for r=4.8, 4.2
         #z.assign(1.001*self.base + 0.0001*perturbations[-1]) # used for r=1.8, 2.6, 3.0, 3.4
@@ -90,21 +85,6 @@ class TaoOptimisation(object):
         self.HJ = derivative(self.dJ, z, w)
         self.H = allocate_matrix(self.HJ, bcs=self.bcs)
         self._assemble_hessian = create_assembly_callable(self.HJ, tensor=self.H, bcs=self.bcs)
-
-        # Assemble the Riesz map
-#        zero = Function(V)
-#        sqnorm = problem.squared_norm(z, zero, params)
-#        R = derivative(derivative(0.5 * sqnorm, z, v), z, w)
-#        RMat = assemble(R, mat_type="aij").M.handle
-#        riesz_ksp = PETSc.KSP.create(comm)
-#        riesz_ksp.setOperators(Rmat)
-#        riesz_ksp.setType("preonly")
-#        riesz_ksp.pc.setType("cholesky")
-#        riesz_ksp.pc.setFactorSolverType("mumps")
-#        riesz_ksp.setOptionsPrefix("riesz_")
-#        riesz_ksp.setFromOptions()
-#        riesz_ksp.setUp()
-#        self.riesz_ksp = riesz_ksp
 
         # Set up TAO solver
         tao = PETSc.TAO().create(comm)
